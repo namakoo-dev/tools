@@ -21,7 +21,7 @@
    使い切って空応答になる（この道具は最初からそう呼ぶ）。
 ★ 判定ではなく「人が見る箇所を絞る」道具。落ちた所だけ人が最終判断する。
 """
-import argparse, base64, json, os, random, socket, subprocess, sys, threading, time, urllib.request
+import argparse, base64, json, os, random, re, socket, subprocess, sys, threading, time, urllib.request
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
@@ -208,7 +208,11 @@ def process(cdp, url, widths, use_vlm, model, out):
     """1 ページを全画面幅で測り、(problems, page) を返す。
     problems=(severity,msg) の list、page=--json 用の構造化データ。"""
     problems = []
-    label = url.rsplit("/", 1)[-1] or url
+    # ★ 表示ラベルと、ファイル名に使う安全な slug を分ける。生 URL には ':' '/' が
+    #   含まれ、そのままファイル名にすると Windows で不正パス→クラッシュしていた
+    #   （末尾 / の URL で label が url 全体になるのが原因。実測: https://vitejs.dev/）。
+    label = url.rstrip("/").rsplit("/", 1)[-1] or url
+    slug = re.sub(r"[^A-Za-z0-9_-]+", "_", label) or "page"
     print("\n" + "=" * 60 + "\n■ %s\n" % url + "=" * 60)
     per_width = {}
     wdata = {}          # ★ --json 用: 幅ごとの測定値
@@ -231,7 +235,7 @@ def process(cdp, url, widths, use_vlm, model, out):
             hh = m["header"]["height"] or 72
             shot = cdp.cmd("Page.captureScreenshot", {"format": "png",
                    "clip": {"x": 0, "y": 0, "width": w, "height": hh, "scale": 2}})
-            fn = os.path.join(out, "%s_%d_nav.png" % (label.replace(".", "_"), w))
+            fn = os.path.join(out, "%s_%d_nav.png" % (slug, w))
             open(fn, "wb").write(base64.b64decode(shot["data"]))
             v = vlm_check(shot["data"], model)
             iss = v.get("issues")
