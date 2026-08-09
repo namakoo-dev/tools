@@ -134,11 +134,25 @@ MEASURE = r"""
             href:a.getAttribute('href'),
             visible:(a.offsetParent!==null && r.width>0 && r.height>0)};
   });
+  // ★ メニュートグル（ハンバーガー）がこの幅で出ているか。出ていれば「消えた
+  //   リンク」は畳まれただけ＝到達可能なので、HIGH を取り下げる根拠になる。
+  const isToggle=(el)=>{
+    const r=el.getBoundingClientRect();
+    if(el.offsetParent===null||r.width<=0||r.height<=0) return false;
+    if(r.top>=180) return false;                 // 上部バーに限る（本文のアコーディオン除外）
+    if(el.hasAttribute('aria-expanded')) return true;
+    const tag=el.tagName, role=el.getAttribute('role');
+    if(!(tag==='BUTTON'||tag==='A'||tag==='LABEL'||role==='button')) return false;
+    const s=(el.getAttribute('aria-label')||'')+' '+
+            ((el.className&&el.className.toString)?el.className.toString():'')+' '+(el.id||'');
+    return /menu|hamburger|burger|nav-?toggle|navbar-?toggle|toggle-?nav|drawer|メニュー|ナビ/i.test(s);
+  };
+  const hamburger=[...document.querySelectorAll('button,a,label,[role=button],[aria-expanded]')].some(isToggle);
   // header の矩形（VLM 用スクショのため）
   const h=document.querySelector('header,nav');
   const hr=h?h.getBoundingClientRect():{x:0,y:0,width:vw,height:72};
   return {vw, scrollW:de.scrollWidth, overflow:Math.max(0,de.scrollWidth-vw),
-          links, header:{x:Math.round(hr.x),y:Math.round(hr.y),
+          links, hamburger, header:{x:Math.round(hr.x),y:Math.round(hr.y),
                          width:Math.round(hr.width),height:Math.round(Math.min(hr.height,140)||72)}};
 })()
 """
@@ -207,7 +221,8 @@ def process(cdp, url, widths, use_vlm, model, out):
         per_width[w] = m
         of = m["overflow"]
         wdata[str(w)] = {"vw": m["vw"], "scrollW": m["scrollW"], "overflow": of,
-                         "links": m["links"], "vlm": None, "nav_screenshot": None}
+                         "links": m["links"], "hamburger": m.get("hamburger", False),
+                         "vlm": None, "nav_screenshot": None}
         tag = "  overflow=%dpx ⚠" % of if of > 0 else "  overflow=0"
         print("  [%4dpx] scrollW=%d%s" % (w, m["scrollW"], tag))
         if of > 0:
@@ -233,10 +248,17 @@ def process(cdp, url, widths, use_vlm, model, out):
         if w == widest:
             continue
         vis = {l["href"] for l in per_width[w]["links"] if l["visible"]}
+        ham = per_width[w].get("hamburger", False)   # ★ この幅にメニュートグルが在るか
         for href, l in base.items():
             if href not in vis:
                 sev = lost_link_severity(href)
-                if sev == "HIGH":
+                if sev == "HIGH" and ham:
+                    # ★ 別ページ導線が消えたが、ハンバーガーが在る＝畳まれただけの可能性。
+                    #   到達不能とは断定できないので LOW に落とす（実サイトの誤検知対策）。
+                    problems.append(("LOW",
+                        "%s @%dpx: 別ページ導線『%s』(%s) が消えているが、メニュートグルあり"
+                        "（畳まれた可能性・要目視）" % (label, w, l["text"] or "(no text)", href)))
+                elif sev == "HIGH":
                     problems.append(("HIGH",
                         "%s @%dpx: 別ページ導線『%s』(%s) が消えている ← 到達不能の恐れ"
                         % (label, w, l["text"] or "(no text)", href)))
