@@ -134,12 +134,15 @@ MEASURE = r"""
             href:a.getAttribute('href'),
             visible:(a.offsetParent!==null && r.width>0 && r.height>0)};
   });
-  // ★ メニュートグル（ハンバーガー）がこの幅で出ているか。出ていれば「消えた
-  //   リンク」は畳まれただけ＝到達可能なので、HIGH を取り下げる根拠になる。
-  const isToggle=(el)=>{
+  // ★ メニュートグル（ハンバーガー）検出。出ていれば「消えたリンク」は畳まれた
+  //   だけ＝到達可能なので HIGH を取り下げる。2 系統を分けて返す:
+  //   named  = 意味づけされたトグル（button/a/role=button に aria-label·menu 系 class、
+  //            または aria-expanded）＝到達可能かつアクセシブル。
+  //   visual = 上部隅に「短い横棒 2〜n 本を積んだ」見た目のハンバーガー（意味属性なしでも拾う。
+  //            実サイトは裸の span 3 本で作ることがある: sunsho.co.jp で実測）。
+  const isNamed=(el)=>{
     const r=el.getBoundingClientRect();
-    if(el.offsetParent===null||r.width<=0||r.height<=0) return false;
-    if(r.top>=180) return false;                 // 上部バーに限る（本文のアコーディオン除外）
+    if(el.offsetParent===null||r.width<=0||r.height<=0||r.top>=180) return false;
     if(el.hasAttribute('aria-expanded')) return true;
     const tag=el.tagName, role=el.getAttribute('role');
     if(!(tag==='BUTTON'||tag==='A'||tag==='LABEL'||role==='button')) return false;
@@ -147,13 +150,26 @@ MEASURE = r"""
             ((el.className&&el.className.toString)?el.className.toString():'')+' '+(el.id||'');
     return /menu|hamburger|burger|nav-?toggle|navbar-?toggle|toggle-?nav|drawer|メニュー|ナビ/i.test(s);
   };
-  const hamburger=[...document.querySelectorAll('button,a,label,[role=button],[aria-expanded]')].some(isToggle);
+  const named=[...document.querySelectorAll('button,a,label,[role=button],[aria-expanded]')].some(isNamed);
+  // 視覚: 上部隅の「幅広で薄い横棒」を集め、x が近いものが 2 本以上積まれていれば図形とみなす
+  const bars=[...document.querySelectorAll('span,i,b,em,div,hr')].map(el=>{
+    const r=el.getBoundingClientRect();
+    if(el.offsetParent===null||r.top>=160||!(r.left<90||r.left>vw-90)) return null;
+    if(r.height<=0||r.height>6||r.width<12||r.width<r.height*3) return null;
+    return {x:Math.round(r.left)};
+  }).filter(Boolean);
+  let visual=false;
+  for(const b of bars){
+    if(bars.filter(o=>Math.abs(o.x-b.x)<=12).length>=2){ visual=true; break; }
+  }
+  const hamburger=named||visual;
   // header の矩形（VLM 用スクショのため）
   const h=document.querySelector('header,nav');
   const hr=h?h.getBoundingClientRect():{x:0,y:0,width:vw,height:72};
   return {vw, scrollW:de.scrollWidth, overflow:Math.max(0,de.scrollWidth-vw),
-          links, hamburger, header:{x:Math.round(hr.x),y:Math.round(hr.y),
-                         width:Math.round(hr.width),height:Math.round(Math.min(hr.height,140)||72)}};
+          links, hamburger, hamburgerNamed:named,
+          header:{x:Math.round(hr.x),y:Math.round(hr.y),
+                  width:Math.round(hr.width),height:Math.round(Math.min(hr.height,140)||72)}};
 })()
 """
 
@@ -226,6 +242,7 @@ def process(cdp, url, widths, use_vlm, model, out):
         of = m["overflow"]
         wdata[str(w)] = {"vw": m["vw"], "scrollW": m["scrollW"], "overflow": of,
                          "links": m["links"], "hamburger": m.get("hamburger", False),
+                         "hamburgerNamed": m.get("hamburgerNamed", False),
                          "vlm": None, "nav_screenshot": None}
         tag = "  overflow=%dpx ⚠" % of if of > 0 else "  overflow=0"
         print("  [%4dpx] scrollW=%d%s" % (w, m["scrollW"], tag))
@@ -270,6 +287,12 @@ def process(cdp, url, widths, use_vlm, model, out):
                     problems.append(("LOW",
                         "%s @%dpx: リンク『%s』(%s) が消えている（#跳び=意図的の可能性）"
                         % (label, w, l["text"] or "(no text)", href)))
+    # ★ a11y: ハンバーガーはあるが「名前が無い」（視覚だけの三本線 span 等）＝スクリーンリーダー
+    #   で『メニュー』と認識できない。到達性(LOW)とは別立ての、事実ベースのチェック。要確認で REVIEW。
+    if any(d.get("hamburger") and not d.get("hamburgerNamed") for d in per_width.values()):
+        problems.append(("REVIEW",
+            "%s: ハンバーガーメニューにアクセシブルな名前が無い可能性 ── "
+            "スクリーンリーダー利用者が『メニュー』と認識できない。要確認（a11y）" % label))
     page = {"url": url, "label": label, "widths": wdata,
             "findings": [{"severity": s, "message": m} for s, m in problems]}
     return problems, page
