@@ -1,0 +1,42 @@
+#!/bin/sh
+# 静的サイト repo 用 pre-commit フックのテンプレ（qa.py のレイアウト QA ゲート）。
+# インストール:  cp ~/.tools/qa-pre-commit.sample <repo>/.git/hooks/pre-commit
+#                chmod +x <repo>/.git/hooks/pre-commit
+#   HIGH（横はみ出し / モバイルで別ページ導線が消える）を見つけたら commit を止める。
+#   終了コード: 0=OK / 1=HIGH でブロック / 2=道具障害(Chrome 無し等)は警告して通す
+#   バイパス: git commit --no-verify
+#   ★ VLM は使わない（毎コミットで重く ollama 依存になる）。ゲートは機械層だけ。
+#   ★ .git/hooks は版管理外＝マシンローカル。clone し直したら入れ直す。
+
+# 1. staged に html/css が無ければ即スキップ（無関係な commit を遅らせない）
+changed=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(html|css)$' | grep -v '_qa_broken')
+[ -z "$changed" ] && exit 0
+
+# 2. 検査対象 = 追跡中の直下 html（_qa_broken 等の一時ファイルは除外）
+pages=$(git ls-files '*.html' | grep -vE '_qa_broken')
+[ -z "$pages" ] && exit 0
+
+QA="$HOME/.tools/qa.py"
+if [ ! -f "$QA" ]; then
+  echo "⚠ qa.py が無い ($QA) → レイアウト QA を skip（commit は通す）"
+  exit 0
+fi
+
+logf="$(git rev-parse --git-dir)/qa_precommit.log"
+echo "▶ レイアウト QA（qa.py: はみ出し / モバイルで消える別ページ導線）…"
+python "$QA" $pages --widths 360,390,1280 --out "$(git rev-parse --git-dir)/qa_precommit" >"$logf" 2>&1
+code=$?
+
+if [ "$code" -eq 1 ]; then
+  echo ""
+  grep -F '[HIGH]' "$logf"
+  echo ""
+  echo "🔴 レイアウト QA で HIGH を検出 → commit を止めた。"
+  echo "   直すか、意図的なら:  git commit --no-verify"
+  exit 1
+elif [ "$code" -ge 2 ]; then
+  echo "⚠ qa.py が動かなかった（Chrome 無し等）→ QA skip（commit は通す）。詳細: $logf"
+  exit 0
+fi
+echo "✓ レイアウト QA OK"
+exit 0

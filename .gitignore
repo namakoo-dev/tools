@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv*/
+*.egg-info/
+out.png
+qa_out/
+yt_*.md
