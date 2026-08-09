@@ -191,11 +191,13 @@ def model_available(model):
 
 
 def process(cdp, url, widths, use_vlm, model, out):
-    """1 ページを全画面幅で測り、problems の (severity, msg) リストを返す。"""
+    """1 ページを全画面幅で測り、(problems, page) を返す。
+    problems=(severity,msg) の list、page=--json 用の構造化データ。"""
     problems = []
     label = url.rsplit("/", 1)[-1] or url
     print("\n" + "=" * 60 + "\n■ %s\n" % url + "=" * 60)
     per_width = {}
+    wdata = {}          # ★ --json 用: 幅ごとの測定値
     for w in widths:
         cdp.cmd("Emulation.setDeviceMetricsOverride",
                 {"width": w, "height": 1400, "deviceScaleFactor": 2, "mobile": w < 768})
@@ -204,6 +206,8 @@ def process(cdp, url, widths, use_vlm, model, out):
         m = cdp.evaluate(MEASURE)
         per_width[w] = m
         of = m["overflow"]
+        wdata[str(w)] = {"vw": m["vw"], "scrollW": m["scrollW"], "overflow": of,
+                         "links": m["links"], "vlm": None, "nav_screenshot": None}
         tag = "  overflow=%dpx ⚠" % of if of > 0 else "  overflow=0"
         print("  [%4dpx] scrollW=%d%s" % (w, m["scrollW"], tag))
         if of > 0:
@@ -216,6 +220,8 @@ def process(cdp, url, widths, use_vlm, model, out):
             open(fn, "wb").write(base64.b64decode(shot["data"]))
             v = vlm_check(shot["data"], model)
             iss = v.get("issues")
+            wdata[str(w)]["vlm"] = {"items": v.get("items"), "issues": iss}
+            wdata[str(w)]["nav_screenshot"] = os.path.basename(fn)
             print("      VLM items=%s" % v.get("items"))
             if iss and iss != "none":
                 print("      VLM issues=%s ⚠" % iss)
@@ -238,7 +244,9 @@ def process(cdp, url, widths, use_vlm, model, out):
                     problems.append(("LOW",
                         "%s @%dpx: リンク『%s』(%s) が消えている（#跳び=意図的の可能性）"
                         % (label, w, l["text"] or "(no text)", href)))
-    return problems
+    page = {"url": url, "label": label, "widths": wdata,
+            "findings": [{"severity": s, "message": m} for s, m in problems]}
+    return problems, page
 
 
 def main():
@@ -248,6 +256,7 @@ def main():
     ap.add_argument("--vlm", action="store_true", help="gemma4 e4b で nav を一次選別")
     ap.add_argument("--model", default="gemma4:e4b-it-qat")
     ap.add_argument("--out", default="qa_out", help="スクショ保存先")
+    ap.add_argument("--json", default=None, help="構造化レポートの書き出し先（ダッシュボード用）")
     args = ap.parse_args()
 
     widths = [int(w) for w in args.widths.split(",")]
@@ -268,12 +277,15 @@ def main():
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     problems = []  # (severity, msg)
+    pages = []     # --json 用の構造化データ
     try:
         wait_cdp(port)                       # ★ 固定 sleep でなくポートの応答を待つ
         cdp = CDP(port)
         cdp.cmd("Page.enable"); cdp.cmd("Runtime.enable")
         for url in urls:
-            problems += process(cdp, url, widths, use_vlm, args.model, args.out)
+            prob, page = process(cdp, url, widths, use_vlm, args.model, args.out)
+            problems += prob
+            pages.append(page)
         cdp.ws.close()
     finally:                                 # ★ 例外でも Chrome とサーバを必ず落とす
         proc.terminate()
@@ -291,6 +303,22 @@ def main():
             mark = {"HIGH": "🔴", "REVIEW": "🟡", "LOW": "⚪"}.get(sev, "・")
             print("  %s [%s] %s" % (mark, sev, msg))
     print("\nスクショ: %s（VLM 使用時）" % os.path.abspath(args.out))
+
+    # ── ダッシュボード用レポート ──
+    if args.json:
+        counts = {"HIGH": 0, "REVIEW": 0, "LOW": 0}
+        for s, _ in problems:
+            counts[s] = counts.get(s, 0) + 1
+        report = {
+            "widths": widths, "vlm": use_vlm,
+            "summary": {"pages": len(pages), **counts},
+            "pages": pages,
+            "findings": [{"severity": s, "message": m} for s, m in problems],
+        }
+        with open(args.json, "w", encoding="utf-8") as f:
+            json.dump(report, f, ensure_ascii=False, indent=2)
+        print("レポート: %s" % os.path.abspath(args.json))
+
     sys.exit(1 if any(s == "HIGH" for s, _ in problems) else 0)
 
 
