@@ -21,7 +21,7 @@
    使い切って空応答になる（この道具は最初からそう呼ぶ）。
 ★ 判定ではなく「人が見る箇所を絞る」道具。落ちた所だけ人が最終判断する。
 """
-import argparse, base64, json, os, random, re, socket, subprocess, sys, threading, time, urllib.request
+import argparse, base64, json, os, random, re, shutil, socket, subprocess, sys, threading, time, urllib.request
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
@@ -52,6 +52,31 @@ def find_chrome():
         if os.path.exists(p):
             return p
     die("Chrome/Edge が見つからない")
+
+
+def stop_chrome(proc, prof):
+    """★ この run の chrome を確実に落とす。chrome は起動直後に本体を再 parent して
+       proc.pid の木から切り離すため、taskkill /T や proc.terminate では子(renderer/gpu…)を
+       取りこぼし孤児化する(実測 ~8個/run)。そこで **この run 専用の一意な --user-data-dir
+       (_cdp_prof_<pid>) を command line に持つ chrome.exe を PID 特定して全部殺す**。
+       他の run の chrome は巻き込まない。Windows 以外は proc.terminate。"""
+    try:
+        if os.name == "nt":
+            key = os.path.basename(prof)   # 一意: _cdp_prof_<pid>
+            ps = ("Get-CimInstance Win32_Process -Filter \"name='chrome.exe'\" | "
+                  "Where-Object { $_.CommandLine -like '*" + key + "*' } | "
+                  "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
+            subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=25)
+        elif proc is not None:
+            proc.terminate()
+    except Exception:
+        pass
+    try:
+        if proc is not None:
+            proc.wait(timeout=5)
+    except Exception:
+        pass
 
 
 def free_port(lo, hi):
@@ -337,9 +362,10 @@ def main():
             pages.append(page)
         cdp.ws.close()
     finally:                                 # ★ 例外でも Chrome とサーバを必ず落とす
-        proc.terminate()
+        stop_chrome(proc, prof)              # ★ この run の chrome を PID 特定で全部（孤児化を防ぐ）
         for s in servers:
             s.shutdown()
+        shutil.rmtree(prof, ignore_errors=True)  # ★ CDP プロファイルの残骸も掃除（ディスク解放）
 
     # ── まとめ ──
     print("\n" + "#" * 60 + "\n# QA まとめ\n" + "#" * 60)
