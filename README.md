@@ -14,7 +14,7 @@
 | **`yt.py`** | YouTube の字幕をテキスト化する。URL/ID を渡すと優先言語で取得し、フロントマター付き `.md` に保存 | `python yt.py <url> [--timestamps] [--lang ja,en]` |
 | **`imgen.py`** | ローカルで画像生成（SDXL-Turbo）。プロンプトも結果も外に出さない。GPU 前提 | `python imgen.py "a dark landing-page hero, abstract grid"` |
 | **`xlview.py`** | 表計算を「見る」。LibreOffice で PDF 化→画像化し、**グラフ・列の溢れ・条件付き書式の実際の色**を目視できる形に | `python xlview.py book.xlsx [--sheet 月次]` |
-| `qa-pre-commit.sample` | `qa.py` を git の pre-commit ゲートにするフックの雛形。HIGH（到達不能な導線など）で commit を止める | `cp qa-pre-commit.sample <repo>/.git/hooks/pre-commit` |
+| `qa-pre-commit.sample` | `qa.py` を git の pre-commit ゲートにするフックの雛形。HIGH（到達不能な導線など）で commit を止める。★ sample は `qa.py` が `~/.tools/qa.py` に置かれている前提。使う場合は `qa.py` をそこに置くか、sample 内の `QA=` を自分のパスに書き換えること | `cp qa-pre-commit.sample <repo>/.git/hooks/pre-commit` |
 
 各ファイル冒頭の docstring に、設計の理由・実測値・踏んだ罠まで書いてあります。
 
@@ -37,11 +37,23 @@
 
 ```
 qa.py      websocket-client ・ Chrome/Edge（headless）。--vlm は ollama + gemma4:e4b-it-qat
+           Chrome/Edge の場所が既知パスに無い時は環境変数 QA_CHROME で明示的に指定できる
 vid.py     Pillow ・ numpy。mp4/webm は imageio-ffmpeg 同梱の ffmpeg。--web は playwright。
            --hear は yt-dlp（字幕）/ faster-whisper（手元の書き起こし・任意）
 yt.py      youtube-transcript-api
 imgen.py   torch ・ diffusers（CUDA GPU 前提）
 xlview.py  openpyxl ・ LibreOffice ・ poppler（pdftoppm）
+           環境変数 XLVIEW_PROFILE（LibreOffice 専用プロファイルの場所）・
+           XLVIEW_OFFICE（soffice の場所）で既定値を上書きできる
+```
+
+## テスト
+
+ブラウザ・GPU・ネットワークが要らない純粋なロジック（境界値判定・重複除去・URL 解析など）だけを
+`tests/test_pure.py` で実テストしています。
+
+```
+python -m pytest tests -q
 ```
 
 ## ライセンス

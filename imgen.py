@@ -13,6 +13,11 @@ diffusers + SDXL-Turbo を、この PC の RTX 4060 (8GB) で回す。
 ★ 動画は作らない（ローカルでは重く、うちの用途では不要 = 見送り）。
 ★ 大半のマーケは生成でなくデザイン（アイコン/フォント/CSS）で足りる。
    これは「ラスター画像がどうしても要る時」の道具。
+
+実測 (RTX 4060 + SDXL-Turbo): 約 7 秒/枚・$0（電気代のみ）。
+★ 罠1: 文字は描けない（SDXL-Turbo の限界。ロゴ文字・見出し文字が要る絵には向かない）。
+★ 罠2: 8GB VRAM に ollama（Qwen 系、常駐 ~1.5GB）と同居する。両方同時に動かすと
+   VRAM を取り合う ── 確実に収めるため CPU offload している（速度は落ちる）。
 """
 import argparse
 import sys
@@ -31,8 +36,11 @@ def main():
     ap.add_argument("--model", default=MODEL)
     a = ap.parse_args()
 
-    import torch
-    from diffusers import AutoPipelineForText2Image
+    try:
+        import torch
+        from diffusers import AutoPipelineForText2Image
+    except ImportError:
+        sys.exit("torch・diffusers が要る: pip install torch diffusers （CUDA 対応の torch を推奨）")
 
     if not torch.cuda.is_available():
         sys.exit("★ CUDA が無い。GPU 無しでは実用速度で回らない。")

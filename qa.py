@@ -43,15 +43,29 @@ CHROME_CANDIDATES = [
     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
     r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/microsoft-edge",
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
 ]
 OLLAMA = "http://127.0.0.1:11434"
 
 
 def find_chrome():
+    """QA_CHROME を最優先で見る（xlview.py の XLVIEW_OFFICE と同じ立て付け）。
+    無ければ Windows/Linux/macOS の既知パスを総当たり。"""
+    env = os.environ.get("QA_CHROME")
+    if env:
+        if os.path.exists(env):
+            return env
+        die(f"QA_CHROME={env} が見つからない")
     for p in CHROME_CANDIDATES:
         if os.path.exists(p):
             return p
-    die("Chrome/Edge が見つからない")
+    die("Chrome/Edge が見つからない（QA_CHROME で明示的にパスを指定できる）")
 
 
 def stop_chrome(proc, prof):
