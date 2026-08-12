@@ -19,7 +19,7 @@
 各ファイル冒頭の docstring に、設計の理由・実測値・踏んだ罠まで書いてあります。
 
 `qa.py --json` の出力は、ブラウザで見られるビューアがあります ──
-**[qa-dashboard](https://watasisaikou.github.io/qa-dashboard/)**（素の TypeScript + Vite）。
+**[qa-dashboard](https://namakoo-dev.github.io/qa-dashboard/)**（素の TypeScript + Vite）。
 
 ## 通底している考え方
 
