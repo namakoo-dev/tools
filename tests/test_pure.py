@@ -52,6 +52,46 @@ def test_lost_link_severity_page_nav_is_high():
     assert qa.lost_link_severity("https://example.com/page") == "HIGH"
 
 
+# ── qa.py: format_page_scan_findings ─────────────────────────────────
+# ★ PAGE_SCAN_JS 自体(壊れ画像判定/コントラスト計算)はブラウザ側 JS のロジックで、
+#   ここでテストするのは「生データ → (severity,msg) への整形」という純 Python 部分だけ。
+
+def test_format_page_scan_findings_empty_raw_is_empty():
+    assert qa.format_page_scan_findings("page.html", {}, 1280) == []
+
+
+def test_format_page_scan_findings_broken_image_is_high():
+    raw = {"brokenImgs": [{"selector": "#hero img", "src": "missing.jpg"}]}
+    out = qa.format_page_scan_findings("page.html", raw, 1280)
+    assert out == [("HIGH",
+        "page.html @1280px評価: 画像が壊れている ── #hero img (src=missing.jpg)")]
+
+
+def test_format_page_scan_findings_broken_image_missing_selector_falls_back():
+    raw = {"brokenImgs": [{"selector": None, "src": "missing.jpg"}]}
+    out = qa.format_page_scan_findings("page.html", raw, 1280)
+    assert out[0][0] == "HIGH"
+    assert "(no selector)" in out[0][1]
+
+
+def test_format_page_scan_findings_low_contrast_is_review():
+    raw = {"lowContrast": [{"ratio": 1.17, "selector": "#d5 p",
+                             "fg": "rgb(221,221,221)", "bg": "rgb(238,238,238)"}]}
+    out = qa.format_page_scan_findings("page.html", raw, 1280)
+    assert out == [("REVIEW",
+        "page.html @1280px評価: コントラスト比 1.17 (<3.0 WCAG) ── #d5 p "
+        "(文字色rgb(221,221,221) / 背景rgb(238,238,238))")]
+
+
+def test_format_page_scan_findings_combines_both_and_preserves_order():
+    raw = {
+        "brokenImgs": [{"selector": "img1", "src": "a.jpg"}],
+        "lowContrast": [{"ratio": 2.0, "selector": "p1", "fg": "rgb(0,0,0)", "bg": "rgb(0,0,0)"}],
+    }
+    out = qa.format_page_scan_findings("page.html", raw, 360)
+    assert [sev for sev, _ in out] == ["HIGH", "REVIEW"]
+
+
 # ── vid.py: tokens_for ─────────────────────────────────────────────
 
 def test_tokens_for_known_values():

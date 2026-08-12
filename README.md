@@ -9,7 +9,7 @@
 
 | | 何をする | 使い方 |
 |---|---|---|
-| **`qa.py`** | 静的サイトのレイアウト QA。ページ×画面幅を総当たりし、**横はみ出し**と、**広い幅で見えて狭い幅で消える別ページ導線**を機械的に検出。`--vlm` でローカル VLM（Gemma 4）による一次選別、`--json` で構造化レポート出力（ダッシュボード用） | `python qa.py <url ...> [--widths 360,390,1280] [--vlm] [--json report.json]` |
+| **`qa.py`** | 静的サイトのレイアウト QA。ページ×画面幅を総当たりし、**横はみ出し**と、**広い幅で見えて狭い幅で消える別ページ導線**を機械的に検出。加えてページ全体を 1 回、**壊れた画像**と **WCAG 低コントラスト**（相対輝度比 <3.0）も機械的に検出（実サイトで偽陽性 0 を確認済）。`--vlm` でローカル VLM（Gemma 4）による一次選別、`--json` で構造化レポート出力（ダッシュボード用） | `python qa.py <url ...> [--widths 360,390,1280] [--vlm] [--json report.json]` |
 | **`vid.py`** | 動きを、コマを送らずに読む。フレーム差分を**数値で**出し、変化した区間（事件）とその領域を特定。`--sheet` の時だけ代表コマを画像化。`--hear` で字幕・書き起こしを動きと突き合わせる | `python vid.py anim.gif` / `python vid.py <url> --hear` |
 | **`yt.py`** | YouTube の字幕をテキスト化する。URL/ID を渡すと優先言語で取得し、フロントマター付き `.md` に保存 | `python yt.py <url> [--timestamps] [--lang ja,en]` |
 | **`imgen.py`** | ローカルで画像生成（SDXL-Turbo）。プロンプトも結果も外に出さない。GPU 前提 | `python imgen.py "a dark landing-page hero, abstract grid"` |

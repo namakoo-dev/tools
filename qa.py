@@ -8,6 +8,8 @@
      リンクの可視を全画面幅で測る。★ 広い幅で見えて狭い幅で消えるリンクを検出
      ── これが今日のバグの正体。別ページ/外部リンクの消失は HIGH、#アンカーの
      消失は LOW（ハンバーガー等で意図的なことが多い）に分けて出す。
+     加えてページ全体を 1 回（測定した幅のうち最後の幅）走査し、壊れた画像・
+     WCAG 低コントラストを検出（実サイトで偽陽性 0 を確認済）。
   ② VLM 一次選別（--vlm）: nav のスクショを gemma4:e4b-it-qat に投げ、見えている
      リンクと「切れ/重なり/崩れ」を人の目で拾わせる。★ 検出/OCR の層まで。
      美的バランスの最終判断は人がやる（E4B には期待しない）。
@@ -225,6 +227,121 @@ def lost_link_severity(href):
     return "HIGH"
 
 
+# ページ全体を 1 回だけ走査する JS（幅非依存）。出典: vlm_slice_spike/dom_scan.py の
+# SCAN_JS（壊れ画像=191-203行目、低コントラスト=205-255行目）から移植。実サイトで偽陽性 0 を
+# 実測済み。★ 見切れ(clip: overflow:hidden+scrollWidth/Height 超過)は dom_scan.py に
+# あったが、実サイト(namakoo-dev.github.io)で実測した結果 section.hero::before/::after
+# （装飾用の絶対配置グロー）や pre.bgcode（装飾の背景コード）を偽陽性として検出したため、
+# qa.py には組み込まなかった（overflow:hidden で意図的にクロップする装飾パターンは
+# 実サイトにありふれており、閾値調整では避けられないと判断）。
+PAGE_SCAN_JS = r"""
+(() => {
+  function hasDirectText(el) {
+    for (const n of el.childNodes) {
+      if (n.nodeType === 3 && n.textContent.trim().length > 0) return true;
+    }
+    return false;
+  }
+  function visibleRect(el) {
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return null;
+    const cs = getComputedStyle(el);
+    if (cs.visibility === 'hidden' || cs.display === 'none') return null;
+    return r;
+  }
+  function describe(el) {
+    const tag = el.tagName.toLowerCase();
+    const id = el.id ? ('#' + el.id) : '';
+    const cls = (el.className && typeof el.className === 'string' && el.className.trim())
+      ? ('.' + el.className.trim().split(/\s+/).join('.')) : '';
+    const anc = el.closest('[id]');
+    const ancId = (anc && anc !== el) ? anc.id : null;
+    const text = (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 70);
+    return (ancId ? ('#' + ancId + ' ') : '') + tag + id + cls + (text ? (' "' + text + '"') : '');
+  }
+
+  const textEls = [...document.querySelectorAll('body *')].filter(el => hasDirectText(el) && visibleRect(el));
+
+  // ================= 壊れ画像 =================
+  const brokenImgs = [];
+  for (const img of document.querySelectorAll('img')) {
+    if (img.complete && img.naturalWidth === 0) {
+      brokenImgs.push({
+        src: img.getAttribute('src'), alt: img.getAttribute('alt'),
+        selector: describe(img) || ('img[src="' + img.getAttribute('src') + '"]'),
+      });
+    }
+  }
+
+  // ================= 低コントラスト（WCAG 相対輝度） =================
+  // (L1+0.05)/(L2+0.05) < 3.0 で報告。半透明背景の多層合成はしない
+  // （祖先を辿って alpha>0.01 の最初の非透明背景をそのまま実効背景とする）。
+  function parseColor(str) {
+    const m = str.match(/rgba?\(([^)]+)\)/);
+    if (!m) return null;
+    const p = m[1].split(',').map(s => parseFloat(s.trim()));
+    return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+  }
+  function srgbToLinear(c) {
+    c = c / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  }
+  function luminance(c) {
+    return 0.2126 * srgbToLinear(c.r) + 0.7152 * srgbToLinear(c.g) + 0.0722 * srgbToLinear(c.b);
+  }
+  function contrastRatio(c1, c2) {
+    const l1 = luminance(c1), l2 = luminance(c2);
+    const hi = Math.max(l1, l2), lo = Math.min(l1, l2);
+    return (hi + 0.05) / (lo + 0.05);
+  }
+  function effectiveBackground(el) {
+    let node = el;
+    while (node) {
+      const cs = getComputedStyle(node);
+      const bg = parseColor(cs.backgroundColor);
+      if (bg && bg.a > 0.01) return bg;
+      node = node.parentElement;
+    }
+    return { r: 255, g: 255, b: 255, a: 1 };
+  }
+  const CONTRAST_MIN = 3.0;
+  const lowContrast = [];
+  for (const el of textEls) {
+    const cs = getComputedStyle(el);
+    const fg = parseColor(cs.color);
+    if (!fg) continue;
+    const bg = effectiveBackground(el);
+    const ratio = contrastRatio(fg, bg);
+    if (ratio < CONTRAST_MIN) {
+      lowContrast.push({
+        ratio: Math.round(ratio * 100) / 100,
+        fg: cs.color, bg: 'rgb(' + Math.round(bg.r) + ',' + Math.round(bg.g) + ',' + Math.round(bg.b) + ')',
+        selector: describe(el),
+      });
+    }
+  }
+
+  return { brokenImgs, lowContrast };
+})()
+"""
+
+
+def format_page_scan_findings(label, raw, eval_width):
+    """PAGE_SCAN_JS の生データを (severity,msg) に整形する純 Python 関数。
+    ★ lost_link_severity と同じ立て付け ── 判定ロジックを JS でなくここに置くことで
+    ブラウザ無しにユニットテストできるようにする。ページ全体を 1 回（widths の最後の
+    要素）でしか測らないため、@%dpx ではなく『@%dpx評価』で評価幅を明記する。"""
+    out = []
+    for b in raw.get("brokenImgs") or []:
+        out.append(("HIGH", "%s @%dpx評価: 画像が壊れている ── %s (src=%s)"
+                    % (label, eval_width, b.get("selector") or "(no selector)", b.get("src"))))
+    for c in raw.get("lowContrast") or []:
+        out.append(("REVIEW", "%s @%dpx評価: コントラスト比 %.2f (<3.0 WCAG) ── %s (文字色%s / 背景%s)"
+                    % (label, eval_width, c.get("ratio", 0), c.get("selector") or "(no selector)",
+                       c.get("fg"), c.get("bg"))))
+    return out
+
+
 # ── VLM 一次選別（gemma4:e4b-it-qat）───────────────────────────────
 VLM_PROMPT = (
     "This image is a website's top navigation/header bar.\n"
@@ -301,6 +418,15 @@ def process(cdp, url, widths, use_vlm, model, out):
             if iss and iss != "none":
                 print("      VLM issues=%s ⚠" % iss)
                 problems.append(("REVIEW", "%s @%dpx VLM: %s" % (label, w, iss)))
+    # ★ ページ全体スキャン（壊れ画像/低コントラスト）は幅に依存しないので 1 回だけ。
+    #   for w in widths: ループはここで終わっており、ブラウザは widths の最後の幅
+    #   （既定なら 1280=デスクトップ）で描画された状態 ── 追加の navigate は不要。
+    eval_w = widths[-1]
+    scan = cdp.evaluate(PAGE_SCAN_JS)
+    page_findings = format_page_scan_findings(label, scan, eval_w)
+    for sev, msg in page_findings:
+        print("  [ページ全体] %s" % msg)
+    problems += page_findings
     # ★ 横断: 広い幅で見えて狭い幅で消えるリンク（今日のバグの正体）
     widest = max(widths)
     base = {l["href"]: l for l in per_width[widest]["links"] if l["visible"]}
