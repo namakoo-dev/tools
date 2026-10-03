@@ -1,14 +1,17 @@
 {
   "permissions": {
     "allow": [
-      "Bash(rish)",
-      "Bash(rish *)",
-      "Bash(sh rish *)",
       "Bash(./rish *)",
-      "Bash(proot)",
       "Bash(proot *)",
+      "Bash(proot)",
+      "Bash(proot-distro *)",
       "Bash(proot-distro)",
-      "Bash(proot-distro *)"
+      "Bash(rish *)",
+      "Bash(rish)",
+      "Bash(sh rish *)",
+      "Edit(*)",
+      "Edit(//**)",
+      "Write"
     ],
     "deny": [
       "Bash(adb shell pm uninstall *)",
@@ -32,6 +35,8 @@
         "*.google.com",
         "*.googleapis.com"
       ]
-    }
+    },
+    "failIfUnavailable": false,
+    "allowUnsandboxedCommands": true
   }
 }

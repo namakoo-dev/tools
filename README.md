@@ -25,9 +25,11 @@
 
 | | 何をする | 使い方 |
 |---|---|---|
-| `cloud/setup.sh` | Claude Code のクラウド環境に Termux（Docker）と proot-distro Debian を用意。Ubuntu の proot 5.1.0 は `ls -la` でホストの属性が漏れるため、上流の静的ビルドに置き換える。何度実行しても壊れない | 環境の「セットアップスクリプト」に貼る / `bash cloud/setup.sh` |
+| `cloud/bootstrap.sh` | **推奨:** 新しいセッション開始時に環境・設定・git状態を自動復元。`cloud/setup.sh` を実行してから settings.json をデプロイ | 環境の「セットアップスクリプト」に丸ごと貼る |
+| `cloud/setup.sh` | Claude Code のクラウド環境に Termux（Docker）と proot-distro Debian を用意。Ubuntu の proot 5.1.0 は `ls -la` でホストの属性が漏れるため、上流の静的ビルドに置き換える | `bootstrap.sh` が呼ぶ / スタンドアロン使用時は `bash cloud/setup.sh` |
+| `cloud/session-start-hook.sh` | 各セッション開始時に自動実行。ワーキングブランチへの自動checkout、コミット状況・push状況の表示 | `cp cloud/session-start-hook.sh ~/.claude/session-start-hook.sh` + launcher-settings.json に追加 |
 | `termux/setup.sh` | Android の Termux に root-repo・x11-repo・scrcpy・Termux:X11・proot Debian・rish（Shizuku）を一括導入 | Termux で `bash termux/setup.sh` |
-| `claude/settings.json` | Claude Code の設定例。rish/proot を確認なしで許可し、`pm uninstall` や `rm -rf /` を拒否 | `cp claude/settings.json ~/.claude/settings.json` |
+| `claude/settings.json` | Claude Code の設定例。rish/proot を確認なしで許可し、`pm uninstall` や `rm -rf /` を拒否。`bootstrap.sh` が自動デプロイ | 手動コピー: `cp claude/settings.json ~/.claude/settings.json` |
 
 ## 通底している考え方
 
