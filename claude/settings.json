@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rish)",
+      "Bash(rish *)",
+      "Bash(sh rish *)",
+      "Bash(./rish *)",
+      "Bash(proot)",
+      "Bash(proot *)",
+      "Bash(proot-distro)",
+      "Bash(proot-distro *)"
+    ],
+    "deny": [
+      "Bash(adb shell pm uninstall *)",
+      "Bash(adb uninstall *)",
+      "Bash(rish -c pm uninstall *)",
+      "Bash(rish -c \"pm uninstall *)",
+      "Bash(rm -rf /)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~)",
+      "Bash(rm -rf ~/*)"
+    ]
+  },
+  "sandbox": {
+    "enabled": false,
+    "network": {
+      "allowedDomains": [
+        "github.com",
+        "packages-cf.termux.dev",
+        "registry.npmjs.org",
+        "google.com",
+        "*.google.com",
+        "*.googleapis.com"
+      ]
+    }
+  }
+}

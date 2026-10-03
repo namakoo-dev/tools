@@ -21,6 +21,14 @@
 `qa.py --json` の出力は、ブラウザで見られるビューアがあります ──
 **[qa-dashboard](https://namakoo-dev.github.io/qa-dashboard/)**（素の TypeScript + Vite）。
 
+## 環境セットアップ
+
+| | 何をする | 使い方 |
+|---|---|---|
+| `cloud/setup.sh` | Claude Code のクラウド環境に Termux（Docker）と proot-distro Debian を用意。Ubuntu の proot 5.1.0 は `ls -la` でホストの属性が漏れるため、上流の静的ビルドに置き換える。何度実行しても壊れない | 環境の「セットアップスクリプト」に貼る / `bash cloud/setup.sh` |
+| `termux/setup.sh` | Android の Termux に root-repo・x11-repo・scrcpy・Termux:X11・proot Debian・rish（Shizuku）を一括導入 | Termux で `bash termux/setup.sh` |
+| `claude/settings.json` | Claude Code の設定例。rish/proot を確認なしで許可し、`pm uninstall` や `rm -rf /` を拒否 | `cp claude/settings.json ~/.claude/settings.json` |
+
 ## 通底している考え方
 
 道具は違っても、作り方の芯は同じです。
